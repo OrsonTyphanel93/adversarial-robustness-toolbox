@@ -29,6 +29,9 @@ demonstrates the dirty-label backdoor attack on a TensorflowV2 estimator for spe
   <img src="../utils/data/images/adversarial_audio_waveform.png?raw=true" width="200" title="adversarial_audio_waveform">
 </p>
 
+[stylistic poisoning_attack_backdoor_audio.ipynb](notebooks/Backdoor_attack_using_audio_stylistic_transformations_in_deep_neural_network_model_learning.ipynb) [[on nbviewer](https://github.com/OrsonTyphanel93/adversarial-robustness-toolbox/blob/main/notebooks/Backdoor_attack_using_audio_stylistic_transformations_in_deep_neural_network_model_learning.ipynb)]
+demonstrates the clean-label stylistic backdoor attack on a TensorflowV2 estimator for speech classification.
+
 ## Adversarial training
 
 [adversarial_retraining.ipynb](adversarial_retraining.ipynb) [[on nbviewer](https://nbviewer.jupyter.org/github/Trusted-AI/adversarial-robustness-toolbox/blob/main/notebooks/adversarial_retraining.ipynb)]
