@@ -18,11 +18,11 @@
 """
 This module implements clean-label attacks on Neural Networks.
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import absolute_import, division, print_function, unicode_literals, annotations
 
 from functools import reduce
 import logging
-from typing import Optional, Tuple, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import numpy as np
 from tqdm.auto import trange
@@ -30,7 +30,6 @@ from tqdm.auto import trange
 from art.attacks.attack import PoisoningAttackWhiteBox
 from art.estimators import BaseEstimator, NeuralNetworkMixin
 from art.estimators.classification.classifier import ClassifierMixin
-from art.estimators.classification.keras import KerasClassifier
 from art.estimators.classification.pytorch import PyTorchClassifier
 
 
@@ -42,11 +41,11 @@ logger = logging.getLogger(__name__)
 
 class FeatureCollisionAttack(PoisoningAttackWhiteBox):
     """
-    Close implementation of Feature Collision Poisoning Attack by Shafahi, Huang, et al 2018.
+    Close implementation of Feature Collision Poisoning Attack by Shafahi, Huang, et al. (2018).
     "Poison Frogs! Targeted Clean-Label Poisoning Attacks on Neural Networks"
 
     This implementation dynamically calculates the dimension of the feature layer, and doesn't hardcode this
-    value to 2048 as done in the paper. Thus we recommend using larger values for the similarity_coefficient.
+    value to 2048 as done in the paper. Thus, we recommend using larger values for the similarity_coefficient.
 
     | Paper link: https://arxiv.org/abs/1804.00792
     """
@@ -71,19 +70,19 @@ class FeatureCollisionAttack(PoisoningAttackWhiteBox):
         self,
         classifier: "CLASSIFIER_NEURALNETWORK_TYPE",
         target: np.ndarray,
-        feature_layer: Union[str, int],
+        feature_layer: str | int,
         learning_rate: float = 500 * 255.0,
         decay_coeff: float = 0.5,
         stopping_tol: float = 1e-10,
-        obj_threshold: Optional[float] = None,
+        obj_threshold: float | None = None,
         num_old_obj: int = 40,
         max_iter: int = 120,
         similarity_coeff: float = 256.0,
-        watermark: Optional[float] = None,
+        watermark: float | None = None,
         verbose: bool = True,
     ):
         """
-        Initialize an Feature Collision Clean-Label poisoning attack
+        Initialize a Feature Collision Clean-Label poisoning attack
 
         :param classifier: A trained neural network classifier.
         :param target: The target input to misclassify at test time.
@@ -112,27 +111,20 @@ class FeatureCollisionAttack(PoisoningAttackWhiteBox):
         self.verbose = verbose
         self._check_params()
 
-        if isinstance(self.estimator, KerasClassifier):
-            self.target_placeholder, self.target_feature_rep = self.estimator.get_activations(
-                self.target, self.feature_layer, 1, framework=True
-            )
-            self.poison_placeholder, self.poison_feature_rep = self.estimator.get_activations(
-                self.target, self.feature_layer, 1, framework=True
-            )
-        elif isinstance(self.estimator, PyTorchClassifier):
+        if isinstance(self.estimator, PyTorchClassifier):
             self.target_feature_rep = self.estimator.get_activations(self.target, self.feature_layer, 1, framework=True)
             self.poison_feature_rep = self.estimator.get_activations(self.target, self.feature_layer, 1, framework=True)
         else:
             raise ValueError("Type of estimator currently not supported.")
         self.attack_loss = tensor_norm(self.poison_feature_rep - self.target_feature_rep)
 
-    def poison(self, x: np.ndarray, y: Optional[np.ndarray] = None, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
+    def poison(self, x: np.ndarray, y: np.ndarray | None = None, **kwargs) -> tuple[np.ndarray, np.ndarray]:
         """
         Iteratively finds optimal attack points starting at values at x
 
         :param x: The base images to begin the poison process.
         :param y: Not used in this attack (clean-label).
-        :return: An tuple holding the (poisoning examples, poisoning labels).
+        :return: A tuple holding the (poisoning examples, poisoning labels).
         """
         num_poison = len(x)
         final_attacks = []
@@ -192,14 +184,7 @@ class FeatureCollisionAttack(PoisoningAttackWhiteBox):
         :param poison: the current poison samples.
         :return: poison example closer in feature representation to target space.
         """
-        if isinstance(self.estimator, KerasClassifier):
-            (attack_grad,) = self.estimator.custom_loss_gradient(
-                self.attack_loss,
-                [self.poison_placeholder, self.target_placeholder],
-                [poison, self.target],
-                name="feature_collision_" + str(self.feature_layer),
-            )
-        elif isinstance(self.estimator, PyTorchClassifier):
+        if isinstance(self.estimator, PyTorchClassifier):
             attack_grad = self.estimator.custom_loss_gradient(self.attack_loss, poison, self.target, self.feature_layer)
         else:
             raise ValueError("The type of the estimator is not supported.")
@@ -287,7 +272,7 @@ def get_class_name(obj: object) -> str:
     return module + "." + obj.__class__.__name__
 
 
-def tensor_norm(tensor, norm_type: Union[int, float, str] = 2):  # pylint: disable=R1710
+def tensor_norm(tensor, norm_type: int | float | str = 2):  # pylint: disable=inconsistent-return-statements
     """
     Compute the norm of a tensor.
 
@@ -295,29 +280,13 @@ def tensor_norm(tensor, norm_type: Union[int, float, str] = 2):  # pylint: disab
     :param norm_type: Order of the norm.
     :return: A tensor with the norm applied.
     """
-    tf_tensor_types = (
-        "tensorflow.python.framework.ops.Tensor",
-        "tensorflow.python.framework.ops.EagerTensor",
-        "tensorflow.python.framework.ops.SymbolicTensor",
-    )
     torch_tensor_types = ("torch.Tensor", "torch.float", "torch.double", "torch.long")
-    mxnet_tensor_types = ()
-    supported_types = tf_tensor_types + torch_tensor_types + mxnet_tensor_types
+    supported_types = torch_tensor_types
     tensor_type = get_class_name(tensor)
     if tensor_type not in supported_types:  # pragma: no cover
         raise TypeError("Tensor type `" + tensor_type + "` is not supported")
-
-    if tensor_type in tf_tensor_types:
-        import tensorflow as tf
-
-        return tf.norm(tensor, ord=norm_type)
 
     if tensor_type in torch_tensor_types:  # pragma: no cover
         import torch
 
         return torch.norm
-
-    if tensor_type in mxnet_tensor_types:  # pragma: no cover
-        import mxnet
-
-        return mxnet.ndarray.norm(tensor, ord=norm_type)

@@ -1,66 +1,68 @@
+--find-links https://download.pytorch.org/whl/cpu
+
 # base
 
-numpy>=1.18.5,<1.25
-scipy==1.10.1
-matplotlib==3.7.1
-scikit-learn>=0.22.2,<1.2.0
-six==1.16.0
-Pillow==9.5.0
-tqdm==4.65.0
-statsmodels==0.13.5
+numpy==1.26.4
+scipy==1.12.0
+matplotlib==3.10.3
+scikit-learn==1.6.1
+six==1.17.0
+Pillow==11.3.0
+tqdm==4.67.1
+statsmodels==0.14.5
 pydub==0.25.1
-resampy==0.4.2
+resampy==0.4.3
 ffmpeg-python==0.2.0
-cma==3.3.0
-pandas==2.0.1
-librosa==0.10.0.post2
-numba~=0.56.4
+cma==4.3.0
+pandas==2.3.1
+librosa==0.11.0
+numba~=0.59.1
 opencv-python
 sortedcontainers==2.4.0
-h5py==3.8.0
+h5py==3.14.0
 multiprocess>=0.70.12
 
 # frameworks
 
-tensorflow==2.14.0
-keras==2.14.0
-tensorflow-addons>=0.13.0
-
-# using mxnet-native for reproducible test results on CI machines without Intel Architecture Processors, but mxnet is fully supported by ART
-mxnet-native==1.8.0.post0
+tensorflow==2.20.0
+keras==3.11.2
 
 # PyTorch
---find-links https://download.pytorch.org/whl/cpu/torch_stable.html
-torch==1.13.1
-torchaudio==0.13.1+cpu
-torchvision==0.14.1+cpu
+torch==2.8.0
+torchaudio==2.8.0
+torchvision==0.23.0
 
 # PyTorch image transformers
-timm==0.9.2
+timm==1.0.19
 
-catboost==1.1.1
-GPy==1.10.0
-lightgbm==3.3.5
-xgboost==1.7.5
+# YOLO dependencies
+ultralytics==8.3.182
 
-kornia~=0.6.12
-tensorboardX==2.6
-lief==0.12.3
-jax[cpu]==0.4.8
+catboost==1.2.8
+GPy==1.13.2
+lightgbm==4.6.0
+xgboost==2.1.4
 
-# Lingvo ASR dependencies
-# supported versions: (lingvo==0.6.4 with tensorflow-gpu==2.1.0)
-# note: due to conflicts with other TF1/2 version supported by ART, the dependencies are not installed by default
-# tensorflow-gpu==2.1.0
-# lingvo==0.6.4
+kornia~=0.8.1
+tensorboardX==2.6.4
+lief==0.16.6
+jax[cpu]==0.4.30
+
+# tests and style checking
+pytest~=8.4.1
+pytest-mock~=3.14.1
+pytest-cov~=6.2.1
+pylint==3.3.8
+mypy==1.17.1
+pycodestyle==2.14.0
+black==25.1.0
+ruff==0.12.10
+types-six==1.17.0.20250515
+types-PyYAML==6.0.12.20250809
+types-setuptools==80.9.0.20250809
 
 # other
-pytest~=7.3.1
-pytest-flake8~=1.1.1
-flake8~=4.0.1
-pytest-mock~=3.10.0
-pytest-cov~=4.0.0
-requests~=2.31.0
+requests~=2.32.5
 
 # ART
 -e .

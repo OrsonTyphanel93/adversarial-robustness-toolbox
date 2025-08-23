@@ -20,10 +20,11 @@ This module implements SmoothAdv applied to classifier predictions.
 
 | Paper link: https://arxiv.org/abs/1906.04584
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import absolute_import, division, print_function, unicode_literals, annotations
 
+from collections.abc import Callable
 import logging
-from typing import Callable, List, Optional, Tuple, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from tqdm.auto import trange
 import numpy as np
@@ -34,7 +35,7 @@ from art.estimators.classification.tensorflow import TensorFlowV2Classifier
 from art.utils import check_and_transform_label_format
 
 if TYPE_CHECKING:
-    # pylint: disable=C0412
+
     import tensorflow as tf
     from art.utils import CLIP_VALUES_TYPE, PREPROCESSING_TYPE
     from art.defences.preprocessor import Preprocessor
@@ -61,14 +62,14 @@ class TensorFlowV2SmoothAdv(TensorFlowV2RandomizedSmoothing):
         self,
         model,
         nb_classes: int,
-        input_shape: Tuple[int, ...],
-        loss_object: Optional["tf.Tensor"] = None,
-        optimizer: Optional["tf.keras.optimizers.Optimizer"] = None,
-        train_step: Optional[Callable] = None,
+        input_shape: tuple[int, ...],
+        loss_object: "tf.Tensor" | None = None,
+        optimizer: "tf.keras.optimizers.Optimizer" | None = None,
+        train_step: Callable | None = None,
         channels_first: bool = False,
-        clip_values: Optional["CLIP_VALUES_TYPE"] = None,
-        preprocessing_defences: Union["Preprocessor", List["Preprocessor"], None] = None,
-        postprocessing_defences: Union["Postprocessor", List["Postprocessor"], None] = None,
+        clip_values: "CLIP_VALUES_TYPE" | None = None,
+        preprocessing_defences: "Preprocessor" | list["Preprocessor"] | None = None,
+        postprocessing_defences: "Postprocessor" | list["Postprocessor"] | None = None,
         preprocessing: "PREPROCESSING_TYPE" = (0.0, 1.0),
         sample_size: int = 32,
         scale: float = 0.1,
@@ -77,7 +78,6 @@ class TensorFlowV2SmoothAdv(TensorFlowV2RandomizedSmoothing):
         num_noise_vec: int = 1,
         num_steps: int = 10,
         warmup: int = 1,
-        verbose: bool = False,
     ) -> None:
         """
         Create a MACER classifier.
@@ -110,7 +110,6 @@ class TensorFlowV2SmoothAdv(TensorFlowV2RandomizedSmoothing):
         :param num_noise_vec: The number of noise vectors.
         :param num_steps: The number of attack updates.
         :param warmup: The warm-up strategy that is gradually increased up to the original value.
-        :param verbose: Show progress bars.
         """
         super().__init__(
             model=model,
@@ -127,7 +126,6 @@ class TensorFlowV2SmoothAdv(TensorFlowV2RandomizedSmoothing):
             sample_size=sample_size,
             scale=scale,
             alpha=alpha,
-            verbose=verbose,
         )
         self.epsilon = epsilon
         self.num_noise_vec = num_noise_vec
@@ -149,7 +147,9 @@ class TensorFlowV2SmoothAdv(TensorFlowV2RandomizedSmoothing):
         )
         self.attack = ProjectedGradientDescent(classifier, eps=self.epsilon, max_iter=1, verbose=False)
 
-    def fit(self, x: np.ndarray, y: np.ndarray, batch_size: int = 128, nb_epochs: int = 10, **kwargs) -> None:
+    def fit(
+        self, x: np.ndarray, y: np.ndarray, batch_size: int = 128, nb_epochs: int = 10, verbose: bool = False, **kwargs
+    ) -> None:
         """
         Fit the classifier on the training set `(x, y)`.
 
@@ -158,6 +158,7 @@ class TensorFlowV2SmoothAdv(TensorFlowV2RandomizedSmoothing):
                   shape (nb_samples,).
         :param batch_size: Size of batches.
         :param nb_epochs: Number of epochs to use for training.
+        :param verbose: Display the training progress bar.
         :param kwargs: Dictionary of framework-specific arguments. This parameter currently only supports
                        "scheduler" which is an optional function that will be called at the end of every
                        epoch to adjust the learning rate.
@@ -200,7 +201,7 @@ class TensorFlowV2SmoothAdv(TensorFlowV2RandomizedSmoothing):
 
         train_ds = tf.data.Dataset.from_tensor_slices((x_preprocessed, y_preprocessed)).shuffle(10000).batch(batch_size)
 
-        for epoch in trange(nb_epochs, disable=not self.verbose):
+        for epoch in trange(nb_epochs, disable=not verbose):
             self.attack.norm = min(self.epsilon, (epoch + 1) * self.epsilon / self.warmup)
 
             for x_batch, y_batch in train_ds:

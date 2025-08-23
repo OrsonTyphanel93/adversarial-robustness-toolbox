@@ -18,10 +18,10 @@
 """
 This module implements clean-label attacks on Neural Networks.
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import absolute_import, division, print_function, unicode_literals, annotations
 
 import logging
-from typing import Tuple, Union, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -63,9 +63,9 @@ class PoisoningAttackAdversarialEmbedding(PoisoningAttackTransformer):
         self,
         classifier: "CLASSIFIER_TYPE",
         backdoor: PoisoningAttackBackdoor,
-        feature_layer: Union[int, str],
-        target: Union[np.ndarray, List[Tuple[np.ndarray, np.ndarray]]],
-        pp_poison: Union[float, List[float]] = 0.05,
+        feature_layer: int | str,
+        target: np.ndarray | list[tuple[np.ndarray, np.ndarray]],
+        pp_poison: float | list[float] = 0.05,
         discriminator_layer_1: int = 256,
         discriminator_layer_2: int = 128,
         regularization: float = 10,
@@ -73,7 +73,7 @@ class PoisoningAttackAdversarialEmbedding(PoisoningAttackTransformer):
         clone=True,
     ):
         """
-        Initialize an Feature Collision Clean-Label poisoning attack
+        Initialize a Feature Collision Clean-Label poisoning attack
 
         :param classifier: A neural network classifier.
         :param backdoor: The backdoor attack used to poison samples
@@ -84,7 +84,7 @@ class PoisoningAttackAdversarialEmbedding(PoisoningAttackTransformer):
         :param discriminator_layer_2: The size of the second discriminator layer
         :param regularization: The regularization constant for the backdoor recognition part of the loss function
         :param learning_rate: The learning rate of clean-label attack optimization.
-        :param clone: Whether or not to clone the model or apply the attack on the original model
+        :param clone: Whether to clone the model or apply the attack on the original model
         """
         super().__init__(classifier=classifier)
         self.backdoor = backdoor
@@ -97,67 +97,72 @@ class PoisoningAttackAdversarialEmbedding(PoisoningAttackTransformer):
         self.discriminator_layer_1 = discriminator_layer_1
         self.discriminator_layer_2 = discriminator_layer_2
         self.regularization = regularization
-        self.train_data: Optional[np.ndarray] = None
-        self.train_labels: Optional[np.ndarray] = None
-        self.is_backdoor: Optional[np.ndarray] = None
+        self.train_data: np.ndarray | None = None
+        self.train_labels: np.ndarray | None = None
+        self.is_backdoor: np.ndarray | None = None
         self.learning_rate = learning_rate
         self._check_params()
 
         if isinstance(self.estimator, KerasClassifier):
-            using_tf_keras = "tensorflow.python.keras" in str(type(self.estimator.model))
-            if using_tf_keras:  # pragma: no cover
-                from tensorflow.keras.models import Model, clone_model  # pylint: disable=E0611
-                from tensorflow.keras.layers import (  # pylint: disable=E0611
-                    GaussianNoise,
-                    Dense,
-                    BatchNormalization,
-                    LeakyReLU,
-                )
-                from tensorflow.keras.optimizers.legacy import Adam  # pylint: disable=E0611
 
-                opt = Adam(lr=self.learning_rate)
+            from keras.models import Model, clone_model
+            from keras.layers import (
+                GaussianNoise,
+                Dense,
+                BatchNormalization,
+                LeakyReLU,
+                Input,
+                Flatten,
+            )
+            from keras.optimizers import Adam
+            import keras
 
-            else:
-                from keras import Model
-                from keras.models import clone_model
-                from keras.layers import GaussianNoise, Dense, BatchNormalization, LeakyReLU
+            opt = Adam(learning_rate=self.learning_rate)
 
-                try:
-                    from keras.optimizers.legacy import Adam
-
-                    opt = Adam(lr=self.learning_rate)
-                except ImportError:
-                    from keras.optimizers import adam_v2
-
-                    opt = adam_v2.Adam(lr=self.learning_rate)
-
+            # Clone and build model
             if clone:
-                self.orig_model = clone_model(self.estimator.model, input_tensors=self.estimator.model.inputs)
+                self.orig_model = clone_model(self.estimator.model)
+                self.orig_model.set_weights(self.estimator.model.get_weights())
             else:
                 self.orig_model = self.estimator.model
-            model_input = self.orig_model.input
+
+            # Ensure model is built (important for Sequential models)
+            if not self.orig_model.built:
+                # Provide a dummy input shape based on the estimator input
+                dummy_input_shape = (None,) + self.estimator.input_shape[1:]
+                self.orig_model.build(dummy_input_shape)
+
+            # Access model input/output (safe for Functional & Sequential)
+            model_input = self.orig_model.inputs
             init_model_output = self.orig_model(model_input)
 
-            # Extracting feature tensor
+            # Extract feature layer output
             if isinstance(self.feature_layer, int):
                 feature_layer_tensor = self.orig_model.layers[self.feature_layer].output
             else:
-                feature_layer_tensor = self.orig_model.get_layer(name=feature_layer).output
-            feature_layer_output = Model(inputs=[model_input], outputs=[feature_layer_tensor])
+                feature_layer_tensor = self.orig_model.get_layer(name=self.feature_layer).output
 
-            # Architecture for discriminator
-            discriminator_input = feature_layer_output(model_input)
-            discriminator_input = GaussianNoise(stddev=1)(discriminator_input)
-            dense_layer_1 = Dense(self.discriminator_layer_1)(discriminator_input)
-            norm_1_layer = BatchNormalization()(dense_layer_1)
-            leaky_layer_1 = LeakyReLU(alpha=0.2)(norm_1_layer)
-            dense_layer_2 = Dense(self.discriminator_layer_2)(leaky_layer_1)
-            norm_2_layer = BatchNormalization()(dense_layer_2)
-            leaky_layer_2 = LeakyReLU(alpha=0.2)(norm_2_layer)
-            backdoor_detect = Dense(2, activation="softmax", name="backdoor_detect")(leaky_layer_2)
+            feature_extractor = Model(inputs=model_input, outputs=feature_layer_tensor)
 
-            # Creating embedded model
-            self.embed_model = Model(inputs=self.orig_model.inputs, outputs=[init_model_output, backdoor_detect])
+            # Discriminator architecture
+            discriminator_input = feature_extractor(model_input)
+            if len(discriminator_input.shape) > 2:
+                discriminator_input = Flatten()(discriminator_input)
+
+            discriminator_input = GaussianNoise(stddev=1.0)(discriminator_input)
+
+            x = Dense(self.discriminator_layer_1)(discriminator_input)
+            x = BatchNormalization()(x)
+            x = LeakyReLU(alpha=0.2)(x)
+
+            x = Dense(self.discriminator_layer_2)(x)
+            x = BatchNormalization()(x)
+            x = LeakyReLU(alpha=0.2)(x)
+
+            backdoor_detect = Dense(2, activation="softmax", name="backdoor_detect")(x)
+
+            # Final embedded model
+            self.embed_model = Model(inputs=model_input, outputs=[init_model_output, backdoor_detect])
 
             # Add backdoor detection loss
             model_name = self.orig_model.name
@@ -175,24 +180,26 @@ class PoisoningAttackAdversarialEmbedding(PoisoningAttackTransformer):
             else:
                 raise TypeError(f"Cannot read model loss value of type {type(model_loss)}")
 
-            self.embed_model.compile(optimizer=opt, loss=losses, loss_weights=loss_weights, metrics=["accuracy"])
+            self.embed_model.compile(
+                optimizer=opt, loss=losses, loss_weights=loss_weights, metrics=["accuracy", "accuracy"]
+            )
         else:
             raise NotImplementedError("This attack currently only supports Keras.")
 
-    def poison(  # pylint: disable=W0221
-        self, x: np.ndarray, y: Optional[np.ndarray] = None, broadcast=False, **kwargs
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    def poison(
+        self, x: np.ndarray, y: np.ndarray | None = None, broadcast=False, **kwargs
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
         Calls perturbation function on input x and target labels y
 
         :param x: An array with the points that initialize attack points.
         :param y: The target labels for the attack.
-        :param broadcast: whether or not to broadcast single target label
+        :param broadcast: Whether to broadcast single target label
         :return: An tuple holding the `(poisoning_examples, poisoning_labels)`.
         """
         return self.backdoor.poison(x, y, broadcast=broadcast)
 
-    def poison_estimator(  # pylint: disable=W0221
+    def poison_estimator(
         self, x: np.ndarray, y: np.ndarray, batch_size: int = 64, nb_epochs: int = 10, **kwargs
     ) -> "CLASSIFIER_TYPE":
         """
@@ -262,7 +269,7 @@ class PoisoningAttackAdversarialEmbedding(PoisoningAttackTransformer):
 
         raise NotImplementedError("Currently only Keras is supported")
 
-    def get_training_data(self) -> Optional[Tuple[np.ndarray, Optional[np.ndarray], Optional[np.ndarray]]]:
+    def get_training_data(self) -> tuple[np.ndarray, np.ndarray | None, np.ndarray | None] | None:
         """
         Returns the training data generated from the last call to fit
 

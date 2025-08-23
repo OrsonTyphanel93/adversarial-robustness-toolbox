@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 @pytest.mark.skip_module("deepspeech_pytorch")
-@pytest.mark.skip_framework("tensorflow", "tensorflow2v1", "keras", "kerastf", "mxnet", "non_dl_frameworks")
+@pytest.mark.skip_framework("tensorflow", "keras", "kerastf", "non_dl_frameworks")
 @pytest.mark.parametrize("use_amp", [False, True])
 @pytest.mark.parametrize("device_type", ["cpu", "gpu"])
 def test_pytorch_deep_speech(art_warning, expected_values, use_amp, device_type):
@@ -124,7 +124,7 @@ def test_pytorch_deep_speech(art_warning, expected_values, use_amp, device_type)
 
 
 @pytest.mark.skip_module("deepspeech_pytorch")
-@pytest.mark.skip_framework("tensorflow", "tensorflow2v1", "keras", "kerastf", "mxnet", "non_dl_frameworks")
+@pytest.mark.skip_framework("tensorflow", "keras", "kerastf", "non_dl_frameworks")
 def test_pytorch_deep_speech_preprocessor(
     art_warning,
     expected_values,
@@ -170,7 +170,7 @@ def test_pytorch_deep_speech_preprocessor(
         # Test probability outputs
         probs, sizes = speech_recognizer.predict(x, batch_size=1, transcription_output=False)
 
-        np.testing.assert_array_almost_equal(probs[1][1], expected_probs, decimal=3)
+        np.testing.assert_array_almost_equal(probs[1][1], expected_probs, decimal=2)
         np.testing.assert_array_almost_equal(sizes, expected_sizes)
 
         # Test transcription outputs

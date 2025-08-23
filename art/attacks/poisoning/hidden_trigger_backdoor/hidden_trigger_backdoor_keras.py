@@ -20,13 +20,12 @@ This module implements a Hidden Trigger Backdoor attack on Neural Networks.
 
 | Paper link: https://arxiv.org/abs/1910.00033
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import absolute_import, division, print_function, unicode_literals, annotations
 
 import logging
-from typing import List, Optional, Tuple, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import numpy as np
-import six
 from tqdm.auto import trange
 
 from art.attacks.attack import PoisoningAttackWhiteBox
@@ -38,7 +37,7 @@ from art.attacks.poisoning.hidden_trigger_backdoor.loss_meter import LossMeter
 from art.utils import check_and_transform_label_format
 
 if TYPE_CHECKING:
-    # pylint: disable=C0412
+
     from art.estimators.classification.tensorflow import TensorFlowV2Classifier
 
 logger = logging.getLogger(__name__)
@@ -46,8 +45,8 @@ logger = logging.getLogger(__name__)
 
 class HiddenTriggerBackdoorKeras(PoisoningAttackWhiteBox):
     """
-    Implementation of Hidden Trigger Backdoor Attack by Saha et al 2019.
-    "Hidden Trigger Backdoor Attacks
+    Implementation of Hidden Trigger Backdoor Attack by Saha et al. (2019).
+    "Hidden Trigger Backdoor Attacks"
 
     | Paper link: https://arxiv.org/abs/1910.00033
     """
@@ -58,15 +57,15 @@ class HiddenTriggerBackdoorKeras(PoisoningAttackWhiteBox):
 
     def __init__(
         self,
-        classifier: Union["KerasClassifier", "TensorFlowV2Classifier"],
+        classifier: "KerasClassifier" | "TensorFlowV2Classifier",
         target: np.ndarray,
         source: np.ndarray,
-        feature_layer: Union[str, int],
+        feature_layer: str | int,
         backdoor: PoisoningAttackBackdoor,
         eps: float = 0.1,
         learning_rate: float = 0.001,
         decay_coeff: float = 0.95,
-        decay_iter: Union[int, List[int]] = 2000,
+        decay_iter: int | list[int] = 2000,
         stopping_threshold: float = 10,
         max_iter: int = 5000,
         batch_size: float = 100,
@@ -97,7 +96,7 @@ class HiddenTriggerBackdoorKeras(PoisoningAttackWhiteBox):
         :param is_index: If true, the source and target params are assumed to represent indices rather
                          than a class label. poison_percent is ignored if true.
         :param verbose: Show progress bars.
-        :print iter: The number of iterations to print the current loss progress.
+        :param print iter: The number of iterations to print the current loss progress.
         """
         super().__init__(classifier=classifier)  # type: ignore
         self.target = target
@@ -116,30 +115,21 @@ class HiddenTriggerBackdoorKeras(PoisoningAttackWhiteBox):
         self.verbose = verbose
         self.print_iter = print_iter
 
-    def poison(  # pylint: disable=W0221
-        self, x: np.ndarray, y: Optional[np.ndarray] = None, **kwargs
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    def poison(self, x: np.ndarray, y: np.ndarray | None = None, **kwargs) -> tuple[np.ndarray, np.ndarray]:
         """
         Calls perturbation function on the dataset x and returns only the perturbed input and their
         indices in the dataset.
+
         :param x: An array in the shape NxWxHxC with the points to draw source and target samples from.
-                  Source indicates the class(es) that the backdoor would be added to to cause
-                  misclassification into the target label.
-                  Target indicates the class that the backdoor should cause misclassification into.
-        :param y: The labels of the provided samples. If none, we will use the classifier to label the
-                  data.
-        :return: An tuple holding the `(poisoning_examples, poisoning_labels)`.
+                  Source indicates the class(es) that the backdoor would be added to cause misclassification into the
+                  target label. Target indicates the class that the backdoor should cause misclassification into.
+        :param y: The labels of the provided samples. If none, we will use the classifier to label the data.
+        :return: A tuple holding the `(poisoning_examples, poisoning_labels)`.
         """
 
         import tensorflow as tf
+        import tensorflow.keras.backend as k
         from scipy.spatial import distance
-
-        if isinstance(self.estimator, KerasClassifier):
-            # pylint: disable=E0401
-            if not self.estimator.is_tensorflow:
-                import keras.backend as k
-            else:
-                import tensorflow.keras.backend as k  # pylint: disable=E0611
 
         data = np.copy(x)
         if y is None:
@@ -160,7 +150,7 @@ class HiddenTriggerBackdoorKeras(PoisoningAttackWhiteBox):
             poison_class = estimated_labels[self.target[0]]  # type: ignore
             poison_indices = self.target
             if not np.all(np.all(estimated_labels[poison_indices] == poison_class, axis=1)):
-                raise ValueError("The target indices do not share the same label")
+                raise ValueError("Target indices do not share the same label")
 
             num_poison = len(poison_indices)
 
@@ -172,20 +162,19 @@ class HiddenTriggerBackdoorKeras(PoisoningAttackWhiteBox):
             if num_trigger == 0:
                 raise ValueError("No data points with source label found")
             if num_trigger < num_poison:
-                raise ValueError("There must be at least as many images with the source label as the target.")
+                raise ValueError("Fewer source images than poison images")
 
             # This won't work if there are fewer trigger images than poison images
             trigger_indices = np.random.choice(trigger_indices, num_poison, replace=False)
-            num_trigger = len(trigger_indices)
 
         # Otherwise, we treat it as an index
         else:
             trigger_indices = self.source
             num_trigger = len(trigger_indices)
             if np.any(np.all(estimated_labels[poison_indices] == poison_class, axis=1)):
-                raise ValueError("There is a source class that is labeled as the target indices")
+                raise ValueError("Source class overlaps with target indices")
             if num_trigger < num_poison:
-                raise ValueError("There must be at least as many images with the source label as the target.")
+                raise ValueError("Fewer source images than poison images")
 
         logger.info("Number of poison inputs: %d", num_poison)
         logger.info("Number of trigger inputs: %d", num_trigger)
@@ -196,6 +185,10 @@ class HiddenTriggerBackdoorKeras(PoisoningAttackWhiteBox):
         final_poison = np.copy(data[poison_indices])
 
         original_images = np.copy(data[poison_indices])
+
+        # Prepare submodel for feature extraction
+        layer_output = self._get_keras_tensor()
+        submodel = tf.keras.Model(inputs=self.estimator._model.inputs, outputs=layer_output)
 
         for batch_id in trange(batches, desc="Hidden Trigger", disable=not self.verbose):
 
@@ -209,73 +202,50 @@ class HiddenTriggerBackdoorKeras(PoisoningAttackWhiteBox):
             # First, we add the backdoor to the source samples and get the feature representation
             trigger_samples, _ = self.backdoor.poison(data[trigger_batch_indices], self.target, broadcast=True)
 
-            feat1 = self.estimator.get_activations(trigger_samples, self.feature_layer)
-            feat1 = np.copy(feat1)
+            poison_samples_preprocessed = self._apply_preprocessing(poison_samples)
+            trigger_samples_preprocessed = self._apply_preprocessing(trigger_samples)
+
+            feat1 = submodel(trigger_samples_preprocessed, training=False).numpy()
+            feat1 = feat1.reshape(feat1.shape[0], -1)
 
             for i in range(self.max_iter):
-                if isinstance(self.decay_iter, int):
-                    decay_exp = i // self.decay_iter
-                else:
-                    max_index = [ii for ii, _ in enumerate(self.decay_iter) if self.decay_iter[ii] <= i]
-                    if len(max_index) == 0:
-                        decay_exp = 0
-                    else:
-                        decay_exp = max(max_index) + 1
-                learning_rate = self.learning_rate * (self.decay_coeff ** decay_exp)
+                decay_exp = (
+                    (i // self.decay_iter)
+                    if isinstance(self.decay_iter, int)
+                    else sum(1 for d in self.decay_iter if d <= i)
+                )
+                learning_rate = self.learning_rate * (self.decay_coeff**decay_exp)
 
                 # Compute distance between features and match samples
-                feat2 = self.estimator.get_activations(poison_samples, self.feature_layer)
-                feat11 = np.copy(feat1)
+                feat2 = submodel(poison_samples_preprocessed, training=False).numpy()
+                feat2 = feat2.reshape(feat2.shape[0], -1)
+                feat1_match = feat1.copy()
                 dist = distance.cdist(feat1, feat2, "minkowski")
 
                 for _ in range(len(feat2)):
                     min_index = np.squeeze((dist == np.min(dist)).nonzero())
-                    feat1[min_index[1]] = feat11[min_index[0]]
+                    feat1[min_index[1]] = feat1_match[min_index[0]]
                     dist[min_index[0], min_index[1]] = 1e5
 
                 loss = np.linalg.norm(feat1 - feat2) ** 2
                 losses.update(float(loss), len(trigger_samples))
 
-                # loss gradient computation for KerasClassifier
-                if isinstance(self.estimator, KerasClassifier):
-                    if not hasattr(self, "_custom_loss"):
-                        self._custom_loss = {}
+                with tf.GradientTape() as tape:
+                    poison_tensor = tf.convert_to_tensor(poison_samples_preprocessed, dtype=tf.float32)
+                    tape.watch(poison_tensor)
+                    feat2_tensor = submodel(poison_tensor, training=False)
+                    loss_tf = tf.reduce_sum(tf.square(tf.convert_to_tensor(feat1, dtype=tf.float32) - feat2_tensor))
 
-                        # Define a variable so we can change it on the fly
-                        feat1_var = k.variable(feat1)
-                        self._custom_loss["feat_var"] = feat1_var
-
-                        output_tensor = self._get_keras_tensor()
-                        attack_loss = tf.math.square(tf.norm(feat1_var - output_tensor))
-
-                        attack_grad_f = k.gradients(attack_loss, self.estimator._input)[0]  # pylint: disable=W0212
-                        self._custom_loss["loss_function"] = k.function(
-                            [self.estimator._input, k.learning_phase()], [attack_grad_f]  # pylint: disable=W0212
-                        )
-                    else:
-                        feat1_var = self._custom_loss["feat_var"]
-
-                    k.set_value(feat1_var, feat1)
-                    preprocessed_poison_samples = self._apply_preprocessing(poison_samples)
-                    # The 0 is for the learning phase placeholder
-                    attack_grad = self._custom_loss["loss_function"]([preprocessed_poison_samples, 0])[0]
-                # loss gradient computation for TensorFlowV2Classifier
-                else:
-                    # Need to do this in the tape I think
-                    poison_tensor = tf.convert_to_tensor(poison_samples)
-                    with tf.GradientTape() as tape:
-                        tape.watch(poison_tensor)
-                        feat2_tensor = self.estimator.get_activations(poison_tensor, 9, 1, framework=True)
-                        attack_loss = tf.math.square(tf.norm(feat1 - feat2_tensor))
-
-                    attack_grad = tape.gradient(attack_loss, poison_tensor).numpy()
+                attack_grad = tape.gradient(loss_tf, poison_tensor).numpy()
 
                 # Update the poison and clip
-                poison_samples = poison_samples - learning_rate * attack_grad
+                poison_samples -= learning_rate * attack_grad
                 pert = poison_samples - original_images[cur_index : cur_index + offset]
                 pert = np.clip(pert, -self.eps, self.eps)
                 poison_samples = pert + original_images[cur_index : cur_index + offset]
-                poison_samples = np.clip(poison_samples, *self.estimator.clip_values)
+                if self.estimator.clip_values is not None:
+                    min_val, max_val = self.estimator.clip_values
+                    poison_samples = np.clip(poison_samples, min_val, max_val)
 
                 if i % self.print_iter == 0:
                     print(
@@ -296,47 +266,26 @@ class HiddenTriggerBackdoorKeras(PoisoningAttackWhiteBox):
         Helper function to get the feature layer output tensor in the keras graph
         :return: Output tensor
         """
-        if self.estimator._layer_names is None:  # pylint: disable=W0212
+        if self.estimator.layer_names is None:
             raise ValueError("No layer names identified.")
 
-        if isinstance(self.feature_layer, six.string_types):
-            if self.feature_layer not in self.estimator._layer_names:  # pylint: disable=W0212
-                raise ValueError(f"Layer name {self.feature_layer} is not part of the graph.")
-            layer_name = self.feature_layer
+        if isinstance(self.feature_layer, str):
+            keras_layer = self.estimator.model.get_layer(self.feature_layer)
         elif isinstance(self.feature_layer, int):
-            if self.feature_layer < 0 or self.feature_layer >= len(
-                self.estimator._layer_names  # pylint: disable=W0212
-            ):
-                raise ValueError(
-                    f"Layer index {self.feature_layer} is outside of range [0 to "  # pylint: disable=W0212
-                    f"{len(self.estimator._layer_names) - 1}])."  # pylint: disable=W0212
-                )
-            layer_name = self.estimator._layer_names[self.feature_layer]  # pylint: disable=W0212
+            layer_name = self.estimator.layer_names[self.feature_layer]
+            keras_layer = self.estimator.model.get_layer(layer_name)
         else:
-            raise TypeError("Layer must be of type `str` or `int`.")
+            raise TypeError("feature_layer must be str or int")
+        return keras_layer.output
 
-        keras_layer = self.estimator._model.get_layer(layer_name)  # pylint: disable=W0212
-        num_inbound_nodes = len(getattr(keras_layer, "_inbound_nodes", []))
-        if num_inbound_nodes > 1:
-            layer_output = keras_layer.get_output_at(0)
-        else:
-            layer_output = keras_layer.output
-        return layer_output
-
-    # Helper function as get_activations returns the tensors, but not the preprocessing
-    def _apply_preprocessing(self, x: np.ndarray) -> np.ndarray:
+    def _apply_preprocessing(self, x):
         """
         Helper function to preprocess the input for use with computing the loss gradient.
         :param x: The input to preprocess
         :return: Preprocessed input
         """
-        if x.shape == self.estimator.input_shape:
-            x_expanded = np.expand_dims(x, 0)
-        else:
-            x_expanded = x
+        x_expanded = np.expand_dims(x, 0) if x.shape == self.estimator.input_shape else x
 
         # Apply preprocessing
-        x_preprocessed, _ = self.estimator._apply_preprocessing(  # pylint: disable=W0212
-            x=x_expanded, y=None, fit=False
-        )
+        x_preprocessed, _ = self.estimator._apply_preprocessing(x=x_expanded, y=None, fit=False)
         return x_preprocessed

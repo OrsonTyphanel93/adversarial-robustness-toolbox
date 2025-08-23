@@ -1,6 +1,7 @@
 """
 Module implementing train-based defences against adversarial attacks.
 """
+
 from art.defences.trainer.trainer import Trainer
 from art.defences.trainer.adversarial_trainer import AdversarialTrainer
 from art.defences.trainer.certified_adversarial_trainer_pytorch import AdversarialTrainerCertifiedPytorch
@@ -12,4 +13,6 @@ from art.defences.trainer.adversarial_trainer_trades import AdversarialTrainerTR
 from art.defences.trainer.adversarial_trainer_trades_pytorch import AdversarialTrainerTRADESPyTorch
 from art.defences.trainer.adversarial_trainer_awp import AdversarialTrainerAWP
 from art.defences.trainer.adversarial_trainer_awp_pytorch import AdversarialTrainerAWPPyTorch
+from art.defences.trainer.adversarial_trainer_oaat import AdversarialTrainerOAAT
+from art.defences.trainer.adversarial_trainer_oaat_pytorch import AdversarialTrainerOAATPyTorch
 from art.defences.trainer.dp_instahide_trainer import DPInstaHideTrainer

@@ -1,6 +1,7 @@
 """
 Module implementing preprocessing defences against adversarial attacks.
 """
+
 from art.defences.preprocessor.cutmix.cutmix import CutMix
 from art.defences.preprocessor.cutmix.cutmix_pytorch import CutMixPyTorch
 from art.defences.preprocessor.cutmix.cutmix_tensorflow import CutMixTensorFlowV2
@@ -9,7 +10,6 @@ from art.defences.preprocessor.cutout.cutout_pytorch import CutoutPyTorch
 from art.defences.preprocessor.cutout.cutout_tensorflow import CutoutTensorFlowV2
 from art.defences.preprocessor.feature_squeezing import FeatureSqueezing
 from art.defences.preprocessor.gaussian_augmentation import GaussianAugmentation
-from art.defences.preprocessor.inverse_gan import DefenseGAN, InverseGAN
 from art.defences.preprocessor.jpeg_compression import JpegCompression
 from art.defences.preprocessor.label_smoothing import LabelSmoothing
 from art.defences.preprocessor.mixup.mixup import Mixup

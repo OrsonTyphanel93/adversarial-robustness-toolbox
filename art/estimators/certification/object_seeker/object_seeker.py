@@ -42,17 +42,16 @@ This module implements the ObjectSeeker certifiably robust defense.
 
 | Paper link: https://arxiv.org/abs/2202.01811
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import absolute_import, division, print_function, unicode_literals, annotations
 
 import abc
 import logging
-from typing import Dict, List, Tuple
 
 import numpy as np
 from sklearn.cluster import DBSCAN
 from tqdm.auto import tqdm
 
-from art.utils import intersection_over_area, non_maximum_suppression
+from art.utils import intersection_over_area
 
 logger = logging.getLogger(__name__)
 
@@ -94,147 +93,32 @@ class ObjectSeekerMixin(abc.ABC):
         self.epsilon = epsilon
         self.verbose = verbose
 
-    @property
     @abc.abstractmethod
-    def channels_first(self) -> bool:
+    def _image_dimensions(self) -> tuple[int, int]:
         """
-        :return: Boolean to indicate index of the color channels in the sample `x`.
-        """
-        pass
+        Get the height and width of a sample input image.
 
-    @property
-    @abc.abstractmethod
-    def input_shape(self) -> Tuple[int, ...]:
-        """
-        :return: Shape of one input sample.
-        """
-        pass
-
-    @abc.abstractmethod
-    def _predict_classifier(self, x: np.ndarray, batch_size: int = 128, **kwargs) -> List[Dict[str, np.ndarray]]:
-        """
-        Perform prediction for a batch of inputs.
-
-        :param x: Samples of shape NCHW or NHWC.
-        :param batch_size: Batch size.
-        :return: Predictions of format `List[Dict[str, np.ndarray]]`, one for each input image. The fields of the Dict
-                 are as follows:
-
-                 - boxes [N, 4]: the boxes in [x1, y1, x2, y2] format, with 0 <= x1 < x2 <= W and 0 <= y1 < y2 <= H.
-                 - labels [N]: the labels for each image
-                 - scores [N]: the scores or each prediction.
+        :return: Tuple containing the height and width of a sample input image.
         """
         raise NotImplementedError
 
-    def predict(self, x: np.ndarray, batch_size: int = 128, **kwargs) -> List[Dict[str, np.ndarray]]:
-        """
-        Perform prediction for a batch of inputs.
-
-        :param x: Samples of shape NCHW or NHWC.
-        :param batch_size: Batch size.
-        :return: Predictions of format `List[Dict[str, np.ndarray]]`, one for each input image. The fields of the Dict
-                 are as follows:
-
-                 - boxes [N, 4]: the boxes in [x1, y1, x2, y2] format, with 0 <= x1 < x2 <= W and 0 <= y1 < y2 <= H.
-                 - labels [N]: the labels for each image
-                 - scores [N]: the scores or each prediction.
-        """
-        predictions = []
-
-        for x_i in tqdm(x, desc="ObjectSeeker", disable=not self.verbose):
-            base_preds, masked_preds = self._masked_predictions(x_i, batch_size=batch_size, **kwargs)
-            pruned_preds = self._prune_boxes(masked_preds, base_preds)
-            unionized_preds = self._unionize_clusters(pruned_preds)
-
-            preds = {
-                "boxes": np.concatenate([base_preds["boxes"], unionized_preds["boxes"]]),
-                "labels": np.concatenate([base_preds["labels"], unionized_preds["labels"]]),
-                "scores": np.concatenate([base_preds["scores"], unionized_preds["scores"]]),
-            }
-
-            predictions.append(preds)
-
-        return predictions
-
+    @abc.abstractmethod
     def _masked_predictions(
         self, x_i: np.ndarray, batch_size: int = 128, **kwargs
-    ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
         """
         Create masked copies of the image for each of lines following the ObjectSeeker algorithm. Then creates
         predictions on the base unmasked image and each of the masked image.
 
         :param x_i: A single image of shape CHW or HWC.
-        :batch_size: Batch size.
+        :param batch_size: Batch size.
         :return: Predictions for the base unmasked image and merged predictions for the masked image.
         """
-        x_mask = np.repeat(x_i[np.newaxis], self.num_lines * 4 + 1, axis=0)
-
-        if self.channels_first:
-            height = self.input_shape[1]
-            width = self.input_shape[2]
-        else:
-            height = self.input_shape[0]
-            width = self.input_shape[1]
-            x_mask = np.transpose(x_mask, (0, 3, 1, 2))
-
-        idx = 1
-
-        # Left masks
-        for k in range(1, self.num_lines + 1):
-            boundary = int(width / (self.num_lines + 1) * k)
-            x_mask[idx, :, :, :boundary] = 0
-            idx += 1
-
-        # Right masks
-        for k in range(1, self.num_lines + 1):
-            boundary = width - int(width / (self.num_lines + 1) * k)
-            x_mask[idx, :, :, boundary:] = 0
-            idx += 1
-
-        # Top masks
-        for k in range(1, self.num_lines + 1):
-            boundary = int(height / (self.num_lines + 1) * k)
-            x_mask[idx, :, :boundary, :] = 0
-            idx += 1
-
-        # Bottom masks
-        for k in range(1, self.num_lines + 1):
-            boundary = height - int(height / (self.num_lines + 1) * k)
-            x_mask[idx, :, boundary:, :] = 0
-            idx += 1
-
-        if not self.channels_first:
-            x_mask = np.transpose(x_mask, (0, 2, 3, 1))
-
-        predictions = self._predict_classifier(x=x_mask, batch_size=batch_size, **kwargs)
-        filtered_predictions = [
-            non_maximum_suppression(
-                pred, iou_threshold=self.iou_threshold, confidence_threshold=self.confidence_threshold
-            )
-            for pred in predictions
-        ]
-
-        # Extract base predictions
-        base_predictions = filtered_predictions[0]
-
-        # Extract and merge masked predictions
-        boxes = np.concatenate([pred["boxes"] for pred in filtered_predictions[1:]])
-        labels = np.concatenate([pred["labels"] for pred in filtered_predictions[1:]])
-        scores = np.concatenate([pred["scores"] for pred in filtered_predictions[1:]])
-        merged_predictions = {
-            "boxes": boxes,
-            "labels": labels,
-            "scores": scores,
-        }
-        masked_predictions = non_maximum_suppression(
-            merged_predictions, iou_threshold=self.iou_threshold, confidence_threshold=self.confidence_threshold
-        )
-
-        return base_predictions, masked_predictions
+        raise NotImplementedError
 
     def _prune_boxes(
-        self, masked_preds: Dict[str, np.ndarray], base_preds: Dict[str, np.ndarray]
-    ) -> Dict[str, np.ndarray]:
+        self, masked_preds: dict[str, np.ndarray], base_preds: dict[str, np.ndarray]
+    ) -> dict[str, np.ndarray]:
         """
         Remove bounding boxes from the masked predictions of a single image based on the IoA score with the boxes
         on the base unmasked predictions.
@@ -253,7 +137,7 @@ class ObjectSeekerMixin(abc.ABC):
         keep_indices = []
         for idx, (masked_box, masked_label) in enumerate(zip(masked_boxes, masked_labels)):
             keep = True
-            for (base_box, base_label) in zip(base_boxes, base_labels):
+            for base_box, base_label in zip(base_boxes, base_labels):
                 if masked_label == base_label:
                     ioa = intersection_over_area(masked_box, base_box)
                     if ioa >= self.prune_threshold:
@@ -270,7 +154,7 @@ class ObjectSeekerMixin(abc.ABC):
         }
         return pruned_preds
 
-    def _unionize_clusters(self, masked_preds: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    def _unionize_clusters(self, masked_preds: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """
         Cluster the bounding boxes for the pruned masked predictions.
 
@@ -332,13 +216,43 @@ class ObjectSeekerMixin(abc.ABC):
         }
         return unionized_predictions
 
+    def predict(self, x: np.ndarray, batch_size: int = 128, **kwargs) -> list[dict[str, np.ndarray]]:
+        """
+        Perform prediction for a batch of inputs.
+
+        :param x: Samples of shape NCHW or NHWC.
+        :param batch_size: Batch size.
+        :return: Predictions of format `list[dict[str, np.ndarray]]`, one for each input image. The fields of the dict
+                 are as follows:
+
+                 - boxes [N, 4]: the boxes in [x1, y1, x2, y2] format, with 0 <= x1 < x2 <= W and 0 <= y1 < y2 <= H.
+                 - labels [N]: the labels for each image
+                 - scores [N]: the scores or each prediction.
+        """
+        predictions = []
+
+        for x_i in tqdm(x, desc="ObjectSeeker", disable=not self.verbose):
+            base_preds, masked_preds = self._masked_predictions(x_i, batch_size=batch_size, **kwargs)
+            pruned_preds = self._prune_boxes(masked_preds, base_preds)
+            unionized_preds = self._unionize_clusters(pruned_preds)
+
+            preds = {
+                "boxes": np.concatenate([base_preds["boxes"], unionized_preds["boxes"]]),
+                "labels": np.concatenate([base_preds["labels"], unionized_preds["labels"]]),
+                "scores": np.concatenate([base_preds["scores"], unionized_preds["scores"]]),
+            }
+
+            predictions.append(preds)
+
+        return predictions
+
     def certify(
         self,
         x: np.ndarray,
         patch_size: float = 0.01,
         offset: float = 0.1,
         batch_size: int = 128,
-    ) -> List[np.ndarray]:
+    ) -> list[np.ndarray]:
         """
         Checks if there is certifiable IoA robustness for each predicted bounding box.
 
@@ -348,10 +262,7 @@ class ObjectSeekerMixin(abc.ABC):
         :return: A list containing an array of bools for each bounding box per image indicating if the bounding
                  box is certified against the given patch.
         """
-        if self.channels_first:
-            _, height, width = self.input_shape
-        else:
-            height, width, _ = self.input_shape
+        height, width = self._image_dimensions()
 
         patch_size = np.sqrt(height * width * patch_size)
         height_offset = offset * height
@@ -360,7 +271,7 @@ class ObjectSeekerMixin(abc.ABC):
         # Get predictions
         predictions = self.predict(x, batch_size=batch_size)
 
-        certifications: List[np.ndarray] = []
+        certifications: list[np.ndarray] = []
 
         for pred in tqdm(predictions, desc="ObjectSeeker", disable=not self.verbose):
             boxes = pred["boxes"]

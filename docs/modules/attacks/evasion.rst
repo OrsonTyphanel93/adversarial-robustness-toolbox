@@ -50,6 +50,12 @@ Auto Conjugate Gradient (Auto-CG)
    :members:
    :special-members:
 
+Rescaling-Auto Conjugate Gradient (ReACG)
+---------------------------------
+.. autoclass:: RescalingAutoConjugateGradient
+   :members:
+   :special-members:
+
 Boundary Attack / Decision-Based Attack
 ---------------------------------------
 .. autoclass:: BoundaryAttack
@@ -83,6 +89,12 @@ Carlini and Wagner L_inf Attack
 Carlini and Wagner ASR Attack
 -----------------------------
 .. autoclass:: CarliniWagnerASR
+   :members:
+   :special-members:
+
+Composite Adversarial Attack - PyTorch
+--------------------------------------
+.. autoclass:: CompositeAdversarialAttackPyTorch
    :members:
    :special-members:
 
@@ -248,6 +260,12 @@ Over The Air Flickering Attack - PyTorch
    :members:
    :special-members:
 
+Overload Attack - PyTorch
+-------------------------
+.. autoclass:: OverloadPyTorch
+   :members:
+   :special-members:
+
 PixelAttack
 -----------
 .. autoclass:: PixelAttack
@@ -272,12 +290,6 @@ Shadow Attack
    :members:
    :special-members:
 
-ShapeShifter Attack
--------------------
-.. autoclass:: ShapeShifter
-   :members:
-   :special-members:
-
 Sign-OPT Attack
 ---------------
 .. autoclass:: SignOPTAttack
@@ -293,6 +305,12 @@ Simple Black-box Adversarial Attack
 Spatial Transformations Attack
 ------------------------------
 .. autoclass:: SpatialTransformation
+   :members:
+   :special-members:
+
+Steal Now Attack Later Attack
+-----------------------------
+.. autoclass:: SNAL
    :members:
    :special-members:
 

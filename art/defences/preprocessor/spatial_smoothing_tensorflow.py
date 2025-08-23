@@ -24,17 +24,17 @@ This module implements the local spatial smoothing defence in `SpatialSmoothing`
     see https://arxiv.org/abs/1803.09868 . For details on how to evaluate classifier security in general, see
     https://arxiv.org/abs/1902.06705
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
+from __future__ import absolute_import, division, print_function, unicode_literals, annotations
 
 import logging
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from art.defences.preprocessor.preprocessor import PreprocessorTensorFlowV2
 
 if TYPE_CHECKING:
-    # pylint: disable=C0412
+
     import tensorflow as tf
     from art.utils import CLIP_VALUES_TYPE
 
@@ -56,14 +56,14 @@ class SpatialSmoothingTensorFlowV2(PreprocessorTensorFlowV2):
         self,
         window_size: int = 3,
         channels_first: bool = False,
-        clip_values: Optional["CLIP_VALUES_TYPE"] = None,
+        clip_values: "CLIP_VALUES_TYPE" | None = None,
         apply_fit: bool = False,
         apply_predict: bool = True,
     ) -> None:
         """
         Create an instance of local spatial smoothing.
 
-        :window_size: Size of spatial smoothing window.
+        :param window_size: Size of spatial smoothing window.
         :param channels_first: Set channels first or last.
         :param clip_values: Tuple of the form `(min, max)` representing the minimum and maximum values allowed
                for features.
@@ -77,12 +77,11 @@ class SpatialSmoothingTensorFlowV2(PreprocessorTensorFlowV2):
         self.clip_values = clip_values
         self._check_params()
 
-    def forward(self, x: "tf.Tensor", y: Optional["tf.Tensor"] = None) -> Tuple["tf.Tensor", Optional["tf.Tensor"]]:
+    def forward(self, x: "tf.Tensor", y: "tf.Tensor" | None = None) -> tuple["tf.Tensor", "tf.Tensor" | None]:
         """
         Apply local spatial smoothing to sample `x`.
         """
         import tensorflow as tf
-        import tensorflow_addons as tfa
 
         x_ndim = x.ndim
 
@@ -98,9 +97,7 @@ class SpatialSmoothingTensorFlowV2(PreprocessorTensorFlowV2):
                 "data."
             )
 
-        x_nhwc = tfa.image.median_filter2d(
-            x_nhwc, filter_shape=[self.window_size, self.window_size], padding="REFLECT", constant_values=0, name=None
-        )
+        x_nhwc = median_filter2d(x=x_nhwc, filter_size=self.window_size, padding="REFLECT")
 
         if x_ndim == 4:
             x = x_nhwc
@@ -125,3 +122,46 @@ class SpatialSmoothingTensorFlowV2(PreprocessorTensorFlowV2):
 
         if self.channels_first:
             raise ValueError("Only channels last input data is supported (`channels_first=False`)")
+
+
+def median_filter2d(x, filter_size=3, padding="REFLECT"):
+    """
+    Applies a 2D median filter to a 4D tensor.
+
+    :param x: A 4D tensor of shape [batch, height, width, channels].
+    :param filter_size: An odd integer specifying the size of the median filter window.
+    :param padding: A string, either 'REFLECT' or 'CONSTANT', specifying the padding method.
+    :return: A 4D tensor of the same shape as x, with the median filter applied.
+    """
+    import tensorflow as tf
+
+    if filter_size % 2 == 0:
+        raise ValueError("filter_size must be an odd integer.")
+
+    pad_total = filter_size // 2
+    if padding == "REFLECT":
+        x_padded = tf.pad(x, [[0, 0], [pad_total, pad_total], [pad_total, pad_total], [0, 0]], mode="REFLECT")
+    elif padding == "CONSTANT":
+        x_padded = tf.pad(x, [[0, 0], [pad_total, pad_total], [pad_total, pad_total], [0, 0]], mode="CONSTANT")
+    else:
+        raise ValueError("Unsupported padding type. Use 'REFLECT' or 'CONSTANT'.")
+
+    patches = tf.image.extract_patches(
+        images=x_padded,
+        sizes=[1, filter_size, filter_size, 1],
+        strides=[1, 1, 1, 1],
+        rates=[1, 1, 1, 1],
+        padding="VALID",
+    )
+
+    k = filter_size * filter_size
+    patches_reshaped = tf.reshape(patches, [-1, tf.shape(x)[1], tf.shape(x)[2], k, tf.shape(x)[3]])
+
+    # Sort the patches along the k dimension (filter window)
+    sorted_patches = tf.sort(patches_reshaped, axis=3)
+
+    # Pick the median index
+    median_idx = k // 2
+    median = sorted_patches[:, :, :, median_idx, :]
+
+    return median

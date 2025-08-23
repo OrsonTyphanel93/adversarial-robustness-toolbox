@@ -20,11 +20,15 @@ This module implements helper functions for the `LaserAttack`.
 
 | Paper link: https://arxiv.org/abs/2103.06504
 """
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from logging import Logger
+import math
 from pathlib import Path
 import string
-from typing import Any, Callable, List, Tuple, Union
+from typing import Any
 
 import numpy as np
 
@@ -43,7 +47,7 @@ class Line:
         self.bias = bias
 
     def __call__(self, x: float) -> float:
-        return np.math.tan(self.angle) * x + self.bias  # type: ignore
+        return math.tan(self.angle) * x + self.bias  # type: ignore
 
     def distance_of_point_from_the_line(self, x: float, y: float) -> float:
         """
@@ -55,8 +59,8 @@ class Line:
         :returns: Distance.
         """
         y_difference = np.abs(self(x) - y)
-        slope_squared = np.math.pow(np.math.tan(self.angle), 2)  # type: ignore
-        return y_difference / np.math.sqrt(1.0 + slope_squared)  # type: ignore
+        slope_squared = math.pow(math.tan(self.angle), 2)  # type: ignore
+        return y_difference / math.sqrt(1.0 + slope_squared)  # type: ignore
 
     def to_numpy(self) -> np.ndarray:
         """
@@ -164,7 +168,7 @@ class ImageGenerator:
         return add_images(image1, image2)
 
     @staticmethod
-    def generate_image(adv_object: Callable, shape: Tuple) -> np.ndarray:
+    def generate_image(adv_object: Callable, shape: tuple) -> np.ndarray:
         """
         Generate image of the adversarial object.
 
@@ -188,7 +192,7 @@ class ImageGenerator:
         return laser_image
 
 
-def wavelength_to_rgb(wavelength: Union[float, int]) -> List[float]:
+def wavelength_to_rgb(wavelength: float | int) -> list[float]:
     """
     Converts wavelength in nanometers to the RGB color.
 
@@ -286,7 +290,7 @@ class DebugInfo:
 
     def save_image(self, image: np.ndarray) -> None:
         """
-        Saves images generated during lasting process to the artifacts directory.
+        Saves images generated during lasting process to the artifact's directory.
 
         :param image: Image to save.
         """
